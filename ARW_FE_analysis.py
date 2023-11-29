@@ -128,7 +128,7 @@ class ARW_FE_analysis():
 
                 CV_minimas.append(CV_rawdata.loc[:,self.CV_columnList[0]].values.min())### they are not really necessary I guess...not used for anything
                 CV_maximas.append(CV_rawdata.loc[:,self.CV_columnList[0]].values.max())### they are not really necessary I guess...not used for anything
-            self.Hamiltonians_CVs = np.column_stack((itertools.zip_longest(*CV_rawlist, fillvalue=0)))
+            self.Hamiltonians_CVs = np.column_stack(list(itertools.zip_longest(*CV_rawlist, fillvalue=0)))
             self.Hamiltonians_CVs[~np.isfinite(self.Hamiltonians_CVs)] = 0
             self.hamiltonianSamplesizes = np.array([cv.shape[0] for cv in CV_rawlist])        
             collectiveVariableOrder = np.argsort(np.array([cv[cv != 0].mean() for cv in self.Hamiltonians_CVs]))
@@ -176,11 +176,11 @@ class ARW_FE_analysis():
                 CV_minimas.append(CV_rawdata.loc[:,self.CV_columnList].values.min())### they are not really necessary I guess...not used for anything
                 CV_maximas.append(CV_rawdata.loc[:,self.CV_columnList].values.max())### they are not really necessary I guess...not used for anything
                  
-            Hamiltonians_CVs = np.column_stack((itertools.zip_longest(*CV_rawlist, fillvalue=0)))
-            Hamiltonians_CVs[~np.isfinite(Hamiltonians_CVs)] = 0
-            flatHamiltonians_CVs = Hamiltonians_CVs.reshape(self.hamiltonians*self.CV_columnCount, -1)
+            self.Hamiltonians_CVs = np.column_stack(list(itertools.zip_longest(*CV_rawlist, fillvalue=0)))
+            self.Hamiltonians_CVs[~np.isfinite(self.Hamiltonians_CVs)] = 0
+            flatHamiltonians_CVs = self.Hamiltonians_CVs.reshape(self.hamiltonians*self.CV_columnCount, -1)
             self.hamiltonianSamplesizes = np.array([cv.shape[0] for cv in flatHamiltonians_CVs])
-            self.Hamiltonians_CVs = Hamiltonians_CVs.reshape(self.hamiltonians, self.CV_columnCount, -1)
+            self.Hamiltonians_CVs = self.Hamiltonians_CVs.reshape(self.hamiltonians, self.CV_columnCount, -1)
             self.hamiltonianForces = np.array(hamiltonianForces).reshape(self.hamiltonians,-1)
             self.hamiltonianAnchors = np.array(hamiltonianAnchors).reshape(self.hamiltonians,-1)
         
@@ -253,7 +253,7 @@ class ARW_FE_analysis():
         return -a * k**2 * (np.exp(k*(x-1)) - 1) * np.exp(k*(x-1)) / (np.exp(k*(x-1)) + 1)**3
         
     ### implement a safety factor to multiplicate the t_corr estimate with
-    def correlationTime_from_BSE(self, hamiltonian, minimumIndependentCVs=1000, safetyFactor=2.0,showBSEplots=True):
+    def correlationTime_from_BSE(self, hamiltonian, minimumIndependentCVs=1000, safetyFactor=2.0,showBSEplots=True,cmap=viridis):
         """
         Estimate the correlation time from a Blocked Standard Error (BSE) analysis for a dataset
         specified by its system's Hamiltonian. This method calculates the correlation time of a
@@ -321,6 +321,7 @@ class ARW_FE_analysis():
         correlationTimeEstimate = np.argsort(BSE_fit_2nd_derivative)[0]    # grossfield et al: t_corr = 2 * inflection_point; but whatever
         
         if showBSEplots:
+            mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=cmap.colors[::25])
             fig, ax = plt.subplots(1, 1, figsize=(6, 4))
             ax2 = ax.twinx()   # twin axis, since the second derivative is usually very small
             data = ax.plot(blockSizes, BSE, alpha=0.7, label='data')
@@ -341,7 +342,7 @@ class ARW_FE_analysis():
             
         return correlationTimeEstimate * safetyFactor
 
-    def decorr_cv_H(self, minimumIndependentCVs=1000, correlationTimeEstimate=None, safetyFactor=2.0, showBSEplots=True):
+    def decorr_cv_H(self, minimumIndependentCVs=1000, correlationTimeEstimate=None, safetyFactor=2.0, showBSEplots=True, cmap=viridis):
         """
         Decorrelate the Hamiltonian-related collective variables (CVs) for improved free energy calculation.
 
@@ -393,7 +394,8 @@ class ARW_FE_analysis():
                 correlationTimeEstimate = self.correlationTime_from_BSE(hamiltonian,
                                                                         safetyFactor=safetyFactor,
                                                                         minimumIndependentCVs=minimumIndependentCVs,
-                                                                        showBSEplots=showBSEplots)                                
+                                                                        showBSEplots=showBSEplots,
+                                                                        cmap=cmap)                                
                 decorrelatedCVsamplesize = int(self.hamiltonianSamplesizes[hamiltonian] / correlationTimeEstimate)
                 highestCVsampleIndex = self.hamiltonianSamplesizes[hamiltonian]
                 ### np.sort() is untested
@@ -413,16 +415,17 @@ class ARW_FE_analysis():
             
         
 # 3. calculate energies
-    def calc_free_energies(self, decorrelationRequired=False, minimumIndependentCVs=1000, correlationTimeEstimate=None, showBSEplots=True):
+    def calc_free_energies(self, decorrelationRequired=False, minimumIndependentCVs=1000, correlationTimeEstimate=None, showBSEplots=True, cmap=viridis):
         
         solver_protocol = (dict(method="adaptive", tol = 1.0e-12, options=dict(maxiter=1000,min_sc_iter=5)),
                            dict(method="hybr"),
                            dict(method="adaptive", tol = 1.0e-12, options=dict(maxiter=10000,min_sc_iter=5)))
         
         if decorrelationRequired:
-            self.Hamiltonians_CVs, self.hamiltonianSamplesizes = self.decorr_cv_H(minimumIndependentCVs=minimumIndependentCVs, 
-                                                                                               correlationTimeEstimate=correlationTimeEstimate,
-                                                                                               showBSEplots=showBSEplots)
+            self.Hamiltonians_CVs, self.hamiltonianSamplesizes = self.decorr_cv_H(minimumIndependentCVs=minimumIndependentCVs,
+                                                                                  correlationTimeEstimate=correlationTimeEstimate,
+                                                                                  showBSEplots=showBSEplots,
+                                                                                  cmap=cmap)
         else:
             print("Caution, You might be using correlated Data.")
             
@@ -446,7 +449,7 @@ class ARW_FE_analysis():
                               mbar_options=dict(solver_protocol=solver_protocol))
         print("FES succesfully calculated")
     
-    def calc_MBAR_free_energy_differences(self, angularData=False,decorrelationRequired=False, minimumIndependentCVs=1000, correlationTimeEstimate=None, showBSEplots=True):
+    def calc_MBAR_free_energy_differences(self, angularData=False,decorrelationRequired=False, minimumIndependentCVs=1000, correlationTimeEstimate=None, showBSEplots=True, cmap=viridis):
         
         solver_protocol = (dict(method="adaptive", tol = 1.0e-12, options=dict(maxiter=1000,min_sc_iter=5)),
                            dict(method="hybr"),
@@ -455,8 +458,9 @@ class ARW_FE_analysis():
             self.Hamiltonians_CVs = np.exp(1j*self.Hamiltonians_CVs)
         if decorrelationRequired:
             self.Hamiltonians_CVs, self.hamiltonianSamplesizes = self.decorr_cv_H(minimumIndependentCVs=minimumIndependentCVs, 
-                                                                                               correlationTimeEstimate=correlationTimeEstimate,
-                                                                                               showBSEplots=showBSEplots)
+                                                                                  correlationTimeEstimate=correlationTimeEstimate,
+                                                                                  showBSEplots=showBSEplots,
+                                                                                  cmap=cmap)
         else:
             print("Caution, You might be using correlated Data.")
             
@@ -483,7 +487,8 @@ class ARW_FE_analysis():
         self.Delta_F = dimensionlessDelta_F * self.kB * self.Temperature
         self.Delta_F_Error = dimensionlessDelta_F_Error * self.kB * self.Temperature
         
-    def plot_histograms(self, angularData=False):
+    def plot_histograms(self, angularData=False, cmap=viridis):
+        mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=cmap.colors[::25])
         if self.CV_columnCount == 1:
             for cvSamples in self.Hamiltonians_CVs:
                 if angularData: cvSamples = np.angle(cvSamples)
@@ -592,11 +597,11 @@ class ARW_FE_analysis():
         self.dG_oB_Error = abs(-self.kB * self.Temperature / (integral * 8 * np.pi**2)) * integral_error
                            
 
-    def compute_overlap_matrix(self, minimumIndependentCVs=100, correlationTimeEstimate=100, showBSEplots=False):
+    def compute_overlap_matrix(self, minimumIndependentCVs=100, correlationTimeEstimate=100, showBSEplots=False, cmap=viridis):
         ### the whole overlap matrix does not really contain a lot of informatio so it would make sense to just plot the first 5-6 highest values per line
         try:
             MbarOverlap = self.mbar.compute_overlap()
-            plt.matshow(MbarOverlap['matrix'], vmin=0, vmax=1)
+            plt.matshow(MbarOverlap['matrix'], vmin=0, vmax=1, cmap=cmap)
             return MbarOverlap
         
         except AttributeError:
@@ -612,12 +617,12 @@ class ARW_FE_analysis():
 
             MBAR = pymbar.mbar.MBAR(Hamiltonians_CVs_energies, hamiltoniansDecorrelatedSamplesizes)
             MbarOverlap = MBAR.compute_overlap()
-            plt.matshow(MbarOverlap['matrix'])
+            plt.matshow(MbarOverlap['matrix'], vmin=0, vmax=1, cmap=cmap)
             return MbarOverlap
         
     
     
-    def calc_MBAR_free_energy_differences_MultiCV(self, angularData=False, decorrelationRequired=False, minimumIndependentCVs=1000, correlationTimeEstimate=None, showBSEplots=True):
+    def calc_MBAR_free_energy_differences_MultiCV(self, angularData=False, decorrelationRequired=False, minimumIndependentCVs=1000, correlationTimeEstimate=None, showBSEplots=True, cmap=viridis):
         
         solver_protocol = (dict(method="adaptive", tol = 1.0e-12, options=dict(maxiter=1000,min_sc_iter=5)),
                            dict(method="hybr"),
@@ -629,7 +634,8 @@ class ARW_FE_analysis():
             self.Hamiltonians_CVs = self.Hamiltonians_CVs.reshape(self.hamiltonians*self.CV_columnCount,-1)
             HamiltoniansDecorrelatedCVs, hamiltoniansDecorrelatedSamplesizes = self.decorr_cv_H(minimumIndependentCVs=minimumIndependentCVs, 
                                                                                                correlationTimeEstimate=correlationTimeEstimate,
-                                                                                               showBSEplots=showBSEplots)   
+                                                                                               showBSEplots=showBSEplots,
+                                                                                               cmap=cmap)   
             self.Hamiltonians_CVs = HamiltoniansDecorrelatedCVs.reshape(self.hamiltonians, self.CV_columnCount, -1)
             self.hamiltonianSamplesizes = hamiltoniansDecorrelatedSamplesizes.reshape(self.hamiltonians, self.CV_columnCount)
             self.hamiltonianSamplesizes = np.min(self.hamiltonianSamplesizes, axis=1)
@@ -1035,7 +1041,7 @@ class BlockedIstar_estimator:
     def generateForwardBackwardConvergencePlot(self, cmap=viridis, filename=False):
         assert isinstance(self.forwardSeparationEnergies, np.ndarray), "Run self.calculateBlockedContribution('forward') before plotting"
         assert isinstance(self.backwardSeparationEnergies, np.ndarray) , "Run self.calculateBlockedContribution('backward') before plotting"
-        mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=plt.cm.viridis.colors[::70])
+        mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=cmap.colors[::100])
         fig, convPlot = plt.subplots()
         convPlot.errorbar(x=self.Dataloader.percentiles, y=self.forwardSeparationEnergies, yerr=self.forwardSeparationEnergies_Error, marker='o', ms=20, alpha=0.5, label='forward')
         convPlot.errorbar(x=self.Dataloader.percentiles, y=self.backwardSeparationEnergies, yerr=self.backwardSeparationEnergies_Error, marker='o', ms=20, alpha=0.5, label='backward')
@@ -1123,6 +1129,7 @@ class BlockedMBARContributionEstimator:
             self.backwardContribution_Error = blockedContribError
             
     def generateForwardBackwardConvergencePlot(self, cmap=viridis, filename=False):
+        mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=cmap.colors[::100])
         assert isinstance(self.forwardContribution, np.ndarray), "Run self.calculateBlockedContribution('forward') before plotting"
         assert isinstance(self.backwardContribution, np.ndarray) , "Run self.calculateBlockedContribution('backward') before plotting"
         fig, convPlot = plt.subplots()
